@@ -1,11 +1,12 @@
 use std::cmp::Ordering;
 use std::str::FromStr;
 
-#[derive(PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum OperatorPrecedence {
     Lowest,
     Sum,
     Product,
+    Exp,
 }
 
 impl PartialOrd for OperatorPrecedence {
@@ -33,6 +34,9 @@ pub enum Token {
     Minus,
     Mult,
     Div,
+    Exp,
+    LeftParen,
+    RightParen,
 }
 
 pub fn tokenize(expression: &str) -> Vec<Token> {
@@ -54,6 +58,9 @@ pub fn tokenize(expression: &str) -> Vec<Token> {
             '-' => tokens.push(Token::Minus),
             '*' => tokens.push(Token::Mult),
             '/' => tokens.push(Token::Div),
+            '^' => tokens.push(Token::Exp),
+            '(' => tokens.push(Token::LeftParen),
+            ')' => tokens.push(Token::RightParen),
             ch if ch.is_whitespace() => (),
             ch => panic!("Not recognized: {}", ch),
         }
@@ -69,16 +76,20 @@ pub enum Expression {
     Minus(Box<Expression>, Box<Expression>),
     Mult(Box<Expression>, Box<Expression>),
     Div(Box<Expression>, Box<Expression>),
+    Exp(Box<Expression>, Box<Expression>),
 }
 
 pub fn parse(tokens: &[Token], operator_precedence: OperatorPrecedence) -> (Expression, &[Token]) {
-    let left = match tokens.get(0) {
-        Some(Token::Number(val)) => Expression::Number(*val),
-        Some(Token::Plus) => todo!(),
-        _ => todo!(),
+    let (left, tokens) = match tokens.get(0) {
+        Some(Token::Number(val)) => (Expression::Number(*val), &tokens[1..]),
+        Some(Token::LeftParen) => {
+            let (expr, tokens) = parse(&tokens[1..], OperatorPrecedence::Lowest);
+            (expr, &tokens[1..])
+        }
+        _ => todo!("This Token does not have a prefix operator for it yet"),
     };
 
-    recursive_parse(&tokens[1..], left, operator_precedence)
+    recursive_parse(tokens, left, operator_precedence)
 }
 
 pub fn recursive_parse(
@@ -108,6 +119,11 @@ pub fn recursive_parse(
             let expr = Expression::Div(Box::new(left), Box::new(right));
             recursive_parse(tokens, expr, precedence)
         }
+        Some(Token::Exp) if OperatorPrecedence::Exp > precedence => {
+            let (right, tokens) = parse(&tokens[1..], OperatorPrecedence::Exp);
+            let expr = Expression::Exp(Box::new(left), Box::new(right));
+            recursive_parse(tokens, expr, precedence)
+        }
         _ => (left, tokens),
     }
 }
@@ -135,6 +151,11 @@ pub fn evaluate(expr: Expression) -> f64 {
             let right = evaluate(*right);
             left / right
         }
+        Expression::Exp(left, right) => {
+            let left = evaluate(*left);
+            let right = evaluate(*right);
+            left.powf(right)
+        }
     }
 }
 
@@ -156,7 +177,13 @@ mod tests {
 
     #[test]
     fn order_of_operations() {
-        let result = eval_expression("5 + 1 * 10 / 2");
-        assert_eq!(result, 10.0);
+        let result = eval_expression("5 ^ 2 + 1 * 10 / 2");
+        assert_eq!(result, 30.0);
+    }
+
+    #[test]
+    fn parens() {
+        let result = eval_expression("6 ^ ((3 - 2) * 2)");
+        assert_eq!(result, 36.0);
     }
 }
